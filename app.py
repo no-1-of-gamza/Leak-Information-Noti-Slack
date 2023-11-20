@@ -1,38 +1,55 @@
+import requests
 import json
 import sys
-import random
-import requests
-import os
-import numpy as np
-import torch
+import time
 
-def send_msg(msg):
-    url = "https://hooks.slack.com/services/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"
-    message = ("Test Message\n" + msg) 
-    title = (f"Test Title :zap:")
-    slack_data = {
-        "username": "leak-info-notification", 
-        "icon_emoji": ":satellite:",
-        "channel" : "#leak-info-notification",
-        "attachments": [
-            {
-                "color": "#9733EE",
-                "fields": [
-                    {
-                        "title": title,
-                        "value": message,
-                        "short": "true",
-                    }
-                ]
-            }
-        ]
-    }
-    byte_length = str(sys.getsizeof(slack_data))
-    headers = {'Content-Type': "application/json", 'Content-Length': byte_length}
-    response = requests.post(url, data=json.dumps(slack_data), headers=headers)
-    if response.status_code != 200:
-        raise Exception(response.status_code, response.text)
-    
+class SlackMessenger:
+    def __init__(self, webhook_url):
+        self.webhook_url = webhook_url
 
-msg=""
-send_msg(msg)
+    def _get_current_time(self):
+        return time.strftime("%Y-%m-%d %H:%M:%S", time.localtime())
+
+    def send_message(self, msg):
+        timestamp = self._get_current_time()
+        message = f"{timestamp}: {msg}"
+        title = ":zap: Leak-Information-Notification :zap:"
+
+        slack_data = {
+            "username": "leak-info-notification",
+            "icon_emoji": ":satellite:",
+            "channel": "#leak-info-notification",
+            "attachments": [
+                {
+                    "color": "#9733EE",
+                    "fields": [
+                        {
+                            "title": title,
+                            "value": message,
+                            "short": "true",
+                        }
+                    ]
+                }
+            ]
+        }
+
+        byte_length = str(sys.getsizeof(slack_data))
+        headers = {'Content-Type': "application/json", 'Content-Length': byte_length}
+        
+        response = requests.post(self.webhook_url, data=json.dumps(slack_data), headers=headers)
+        
+        if response.status_code != 200:
+            raise Exception(response.status_code, response.text)
+
+def main():
+    webhook_url = "https://hooks.slack.com/services/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"
+    messenger = SlackMessenger(webhook_url)
+
+    # Example message
+    message = "Test!"
+
+    # Send the message
+    messenger.send_message(message)
+
+if __name__ == "__main__":
+    main()

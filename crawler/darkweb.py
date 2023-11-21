@@ -90,7 +90,7 @@ class LockBit(LeakCrawler):
 		soup = BeautifulSoup(source, "html.parser")
 		data += self.crawl_posts(soup)
 		for d in data:
-			self.crawl_details(d, d["url"])
+			self.crawl_details(d)
 
 		return data
 
@@ -128,8 +128,8 @@ class LockBit(LeakCrawler):
 		url = self.get_random_host() + path
 		return url
 
-	def crawl_details(self, post_data, url):
-		self.driver.get(url=url)
+	def crawl_details(self, post_data):
+		self.driver.get(url=post_data["url"])
 
 		WebDriverWait(self.driver, 20).until(
 			EC.presence_of_element_located((By.CLASS_NAME, 'post-company-info'))

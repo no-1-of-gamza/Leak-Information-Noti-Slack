@@ -5,8 +5,10 @@ from selenium.webdriver.support import expected_conditions as EC
 from bs4 import BeautifulSoup
 
 import abc
-import time
 import random
+from datetime import datetime
+
+from darkweb_query import *
 
 
 class Crawler:
@@ -15,20 +17,109 @@ class Crawler:
 		self.lockbit = LockBit(self.driver.get())
 
 	def start(self) -> list:
-		data = []
-		data += self.lockbit.start()
+		alarm_data = []
 
-		return data
+		result, rows = check_initialization()
+		if len(rows) < 1:
+			alarm_data += self.initial_launch()
+		else:
+			last_domain = rows[0][0]
+			alarm_data += self.regular_launch(last_domain)
+
+		self.close()
+		return alarm_data
+
+	def initial_launch(self):
+		alarm_data = []
+
+		crawl_data = self.lockbit.crawl_posts()
+		for data in crawl_data:
+			if data["status"] == "published":
+				continue
+
+			self.lockbit.crawl_details(data)
+			alarm_data.append(data)
+
+		# print("collected:", len(alarm_data))
+
+		for data in alarm_data:
+			result, err = insert_pending(data)
+			if not result:
+				print(err)
+				return []
+
+		# print("success to save all data")
+
+		result, err = update_last_scan(crawl_data[0]["domain"])
+		if not result:
+			print(err)
+			return []
+
+		return alarm_data
+
+	def regular_launch(self, last_domain):
+		alarm_data = []
+
+		crawl_data = self.lockbit.crawl_posts()
+		i = 0
+		while True:
+			data = crawl_data[i]
+			if data["domain"] == last_domain:
+				break
+
+			self.lockbit.crawl_details(data)
+			alarm_data.append(data)
+			i += 1
+
+		result, rows = select_all_pending()
+		if not result:
+			print(err)
+			return []
+
+		for pending_data in rows:
+			target_domain = pending_data[0]
+			crawled_data = self.search_data(target_domain, crawl_data)
+			if crawled_data["status"] == "published":
+				self.lockbit.crawl_details(crawled_data)
+				alarm_data.append(crawled_data)
+
+				result, err = delete_post(target_domain)
+				if not result:
+					print(err)
+					return []
+				# print(target_domain, "becomes published post")
+
+		result, err = update_last_scan(crawl_data[0]["domain"])
+		if not result:
+			print(err)
+			return []
+
+		return alarm_data
+
+	def search_data(self, target_domain, crawl_data):
+		for data in crawl_data:
+			if data["domain"] == target_domain:
+				return data
+		return {}
+
+	def close(self):
+		self.driver.close()
+		db_close()
 
 
 class Driver:
-	def __init__(self):
+	def __init__(self, option="visible"):
 		proxy = "127.0.0.1:9150"
-		options = webdriver.ChromeOptions()
-		options.add_experimental_option("excludeSwitches", ["enable-logging"])
-		options.add_argument('--proxy-server=socks5://'+proxy)
 
-		self.driver = webdriver.Chrome(options=options)
+		self.options = webdriver.ChromeOptions()
+		self.options.add_experimental_option("excludeSwitches", ["enable-logging"])
+		self.options.add_argument("--log-level=0")
+		self.options.add_argument('--proxy-server=socks5://'+proxy)
+		if option == "hidden":
+			self.options.add_argument("headless")
+			self.options.add_argument("disable-gpu")
+
+		self.driver = webdriver.Chrome(options=self.options)
 
 	def get(self):
 		return self.driver
@@ -40,10 +131,10 @@ class Driver:
 class LeakCrawler(abc.ABC):
 	def __init__(self, driver):
 		self.driver = driver
-		self.site = []
+		self.site = ""
 
 	def get_source(self):
-		self.driver.get(url=self.get_random_host())
+		self.driver.get(url=self.site)
 		self.bypassProtection()
 
 		source = self.driver.page_source
@@ -62,7 +153,10 @@ class LockBit(LeakCrawler):
 	def __init__(self, driver):
 		super(LockBit, self).__init__(driver)
 		self.driver = driver
-		self.site = [
+		self.site = self.get_random_host()
+
+	def get_random_host(self):
+		hosts = [
 			"http://lockbitaptc2iq4atewz2ise62q63wfktyrl4qtwuk5qax262kgtzjqd.onion",
 			"http://lockbitapt2yfbt7lchxejug47kmqvqqxvvjpqkmevv4l3azl3gy6pyd.onion",
 			"http://lockbitaptc2iq4atewz2ise62q63wfktyrl4qtwuk5qax262kgtzjqd.onion",
@@ -70,50 +164,39 @@ class LockBit(LeakCrawler):
 			"http://lockbitapt5x4zkjbcqmz6frdhecqqgadevyiwqxukksspnlidyvd7qd.onion"
 		]
 
-	def get_random_host(self):
-		idx = random.randint(0, len(self.site)-1)
-		return self.site[idx]
-
-	def start(self):
-		source = self.get_source()
-		data = self.crawl_site(source)
-		return data
+		idx = random.randint(0, len(hosts)-1)
+		return hosts[idx]
 
 	def bypassProtection(self):
 		WebDriverWait(self.driver, 20).until(
 			EC.presence_of_element_located((By.CLASS_NAME, 'post-big-list'))
 		)
 
-	def crawl_site(self, source):
-		data = []
-
+	def crawl_posts(self):
+		source = self.get_source()
 		soup = BeautifulSoup(source, "html.parser")
-		data += self.crawl_posts(soup)
-		for d in data:
-			self.crawl_details(d)
 
-		return data
-
-	def crawl_posts(self, soup):
 		data = []
-
 		items = soup.select("div.post-big-list>div.post-block")
 		for item in items:
 			domain = self.domain_parser(item.select_one("div.post-title").text)
 			url = self.url_parser(item.get("onclick"))
 			remain_timer = item.select_one("div.timer")
-			remain_time = { "status": "pending" }
+			status = "pending"
+			remain_time = ""
 			try:
-				remain_time["days"] = remain_timer.select_one("span.days").text
-				remain_time["hours"] = remain_timer.select_one("span.hours").text
-				remain_time["minutes"] = remain_timer.select_one("span.minutes").text
-				remain_time["seconds"] = remain_timer.select_one("span.seconds").text
+				days = remain_timer.select_one("span.days").text
+				hours = remain_timer.select_one("span.hours").text
+				minutes = remain_timer.select_one("span.minutes").text
+				seconds = remain_timer.select_one("span.seconds").text
+				remain_time = "{} {} {} {}".format(days, hours, minutes, seconds)
 			except AttributeError:
-				remain_time["status"] = "published"
+				status = "published"
 
 			data.append({
 				"domain": domain,
 				"url": url,
+				"status": status,
 				"remain_time": remain_time
 			})
 
@@ -125,44 +208,60 @@ class LockBit(LeakCrawler):
 
 	def url_parser(self, string):
 		path = string.strip()[11:-3]
-		url = self.get_random_host() + path
+		url = self.site + path
 		return url
 
 	def crawl_details(self, post_data):
 		self.driver.get(url=post_data["url"])
 
-		WebDriverWait(self.driver, 20).until(
+		WebDriverWait(self.driver, 40).until(
 			EC.presence_of_element_located((By.CLASS_NAME, 'post-company-info'))
 		)
 		soup = BeautifulSoup(self.driver.page_source, "html.parser")
 
 		deadline = soup.select_one("div.post-wrapper>p.post-banner-p").text
+		deadline = self.deadline_parser(deadline)
 		
 		company_info = soup.select_one("div.post-company-info")
 		try:
-			logo = company_info.select_one("div.post-company-img>img").get("src")
-		except AttributeError:
-			logo = ""
-		try:
 			description = company_info.select_one("div.post-company-content>div.desc").text
+			description = description[2:].strip()
 		except AttributeError:
 			description = ""
 		
 		uploaded_updated_date = company_info.select_one("div.post-company-content>div.uploaded-updated-date")
-		uploaded_date = uploaded_updated_date.select_one("div.uploaded-date>div.uploaded-date-utc").text
-		updated_date = uploaded_updated_date.select_one("div.updated-date>div.updated-date-utc").text
+		uploaded_date = uploaded_updated_date.select_one("div.uploaded-date>div.uploaded-date-utc").text.strip()
+		uploaded_date = self.date_parser(uploaded_date)
+		updated_date = uploaded_updated_date.select_one("div.updated-date>div.updated-date-utc").text.strip()
+		updated_date = self.date_parser(updated_date)
 
 		post_data["deadline"] = deadline
-		post_data["logo"] = logo
 		post_data["description"] = description
 		post_data["uploaded_date"] = uploaded_date
 		post_data["updated_date"] = updated_date
 
+	def deadline_parser(self, string):
+		deadline_string = string[10:-4].strip()
+
+		date_format = "%d %b, %Y %H:%M:%S"
+		date_obj = datetime.strptime(deadline_string, date_format)
+		date = date_obj.strftime("%Y-%m-%d %H:%M:%S")
+		return date
+
+	def date_parser(self, string):
+		date_string = string[:-3].strip()
+
+		date_format = "%d %b, %Y %H:%M"
+		date_obj = datetime.strptime(date_string, date_format)
+		date = date_obj.strftime("%Y-%m-%d %H:%M:%S")
+		return date
+
 
 if __name__ == "__main__":
 	crawler = Crawler()
-	data = crawler.start()
+	alarm_data = crawler.start()
 
+	print("\n\nalarm data:", len(data))
 	for d in data:
 		print(d)
 		print()

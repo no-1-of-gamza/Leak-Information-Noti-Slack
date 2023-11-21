@@ -124,7 +124,7 @@ class LockBit(LeakCrawler):
 		return trim_string.strip()
 
 	def url_parser(self, string):
-		path = string.strip()[11:-3]
+		path = string.strip()[11:-4]
 		url = self.get_random_host() + path
 		return url
 

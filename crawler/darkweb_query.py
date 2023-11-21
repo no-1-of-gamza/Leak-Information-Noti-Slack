@@ -1,7 +1,7 @@
 import sys
 
-sys.path.append("..\\db")
-import db as database
+sys.path.append("..\\database")
+import database
 
 db = database.DB()
 

@@ -78,6 +78,12 @@ class Crawler:
 
 			self.lockbit.crawl_details(data)
 			alarm_data.append(data)
+
+			result, err = insert_pending(data)
+			if not result:
+				print(err)
+				return False, []
+			
 			i += 1
 
 		result, rows = select_all_pending()
@@ -215,11 +221,22 @@ class LockBit(LeakCrawler):
 			remain_time = ""
 			try:
 				days = remain_timer.select_one("span.days").text
+				remain_time += days
+			except AttributeError: pass
+			try:
 				hours = remain_timer.select_one("span.hours").text
+				remain_time += " " + hours
+			except AttributeError: pass
+			try:
 				minutes = remain_timer.select_one("span.minutes").text
+				remain_time += " " + minutes
+			except AttributeError: pass
+			try:
 				seconds = remain_timer.select_one("span.seconds").text
-				remain_time = "{} {} {} {}".format(days, hours, minutes, seconds)
-			except AttributeError:
+				remain_time += " " + seconds
+			except AttributeError: pass
+
+			if remain_time == "":
 				status = "published"
 
 			data.append({
@@ -284,3 +301,19 @@ class LockBit(LeakCrawler):
 		date_obj = datetime.strptime(date_string, date_format)
 		date = date_obj.strftime("%Y-%m-%d %H:%M:%S")
 		return date
+
+import time
+if __name__ == "__main__":
+	start_time = time.time()
+
+	crawler = Crawler()
+	result, alarm_data = crawler.start()
+
+	if result:
+		print("\n\nalarm data:", len(alarm_data))
+		for d in alarm_data:
+			print(d)
+			print()
+
+	end_time = time.time()
+	print("\ntime:", (end_time - start_time))

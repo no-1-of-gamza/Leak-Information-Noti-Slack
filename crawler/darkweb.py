@@ -6,7 +6,7 @@ from bs4 import BeautifulSoup
 
 import abc
 import random
-from datetime import datetime
+from datetime import datetime, timezone
 
 from darkweb_query import *
 
@@ -40,15 +40,11 @@ class Crawler:
 			self.lockbit.crawl_details(data)
 			alarm_data.append(data)
 
-		# print("collected:", len(alarm_data))
-
 		for data in alarm_data:
 			result, err = insert_pending(data)
 			if not result:
 				print(err)
 				return []
-
-		# print("success to save all data")
 
 		result, err = update_last_scan(crawl_data[0]["domain"])
 		if not result:
@@ -79,7 +75,15 @@ class Crawler:
 		for pending_data in rows:
 			target_domain = pending_data[0]
 			crawled_data = self.search_data(target_domain, crawl_data)
-			if crawled_data["status"] == "published":
+			if crawled_data == {}:
+				data = self.create_negotiated_data(pending_data)
+				alarm_data.append(data)
+
+				result, err = delete_post(target_domain)
+				if not result:
+					print(err)
+					return []
+			elif crawled_data["status"] == "published":
 				self.lockbit.crawl_details(crawled_data)
 				alarm_data.append(crawled_data)
 
@@ -87,7 +91,6 @@ class Crawler:
 				if not result:
 					print(err)
 					return []
-				# print(target_domain, "becomes published post")
 
 		result, err = update_last_scan(crawl_data[0]["domain"])
 		if not result:
@@ -101,6 +104,19 @@ class Crawler:
 			if data["domain"] == target_domain:
 				return data
 		return {}
+
+	def create_negotiated_data(self, row) -> dict:
+		data = {
+			"domain": row[0],
+			"url": row[1],
+			"status": "negotiated",
+			"remain_time": "",
+			"deadline": row[3],
+			"description": row[4],
+			"uploaded_date": row[5],
+			"updated_date": datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
+		}
+		return data
 
 	def close(self):
 		self.driver.close()
@@ -261,7 +277,7 @@ if __name__ == "__main__":
 	crawler = Crawler()
 	alarm_data = crawler.start()
 
-	print("\n\nalarm data:", len(data))
-	for d in data:
+	print("\n\nalarm data:", len(alarm_data))
+	for d in alarm_data:
 		print(d)
 		print()

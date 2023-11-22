@@ -16,18 +16,31 @@ class Crawler:
 		self.driver = Driver()
 		self.lockbit = LockBit(self.driver.get())
 
-	def start(self) -> list:
+	def start(self) -> (bool, list):
 		alarm_data = []
 
 		result, rows = check_initialization()
+		if not result:
+			print(result)
+			print(rows)
+			return False, []
+
 		if len(rows) < 1:
-			alarm_data += self.initial_launch()
+			result, data = self.initial_launch()
+			if not result:
+				return False, []
+			else:
+				alarm_data = data
 		else:
 			last_domain = rows[0][0]
-			alarm_data += self.regular_launch(last_domain)
+			result, data = self.regular_launch(last_domain)
+			if not result:
+				return False, []
+			else:
+				alarm_data = data
 
 		self.close()
-		return alarm_data
+		return True, alarm_data
 
 	def initial_launch(self):
 		alarm_data = []
@@ -44,14 +57,14 @@ class Crawler:
 			result, err = insert_pending(data)
 			if not result:
 				print(err)
-				return []
+				return False, []
 
 		result, err = update_last_scan(crawl_data[0]["domain"])
 		if not result:
 			print(err)
-			return []
+			return False, []
 
-		return alarm_data
+		return True, alarm_data
 
 	def regular_launch(self, last_domain):
 		alarm_data = []
@@ -70,7 +83,7 @@ class Crawler:
 		result, rows = select_all_pending()
 		if not result:
 			print(err)
-			return []
+			return False, []
 
 		for pending_data in rows:
 			target_domain = pending_data[0]
@@ -82,7 +95,7 @@ class Crawler:
 				result, err = delete_post(target_domain)
 				if not result:
 					print(err)
-					return []
+					return False, []
 			elif crawled_data["status"] == "published":
 				self.lockbit.crawl_details(crawled_data)
 				alarm_data.append(crawled_data)
@@ -90,14 +103,14 @@ class Crawler:
 				result, err = delete_post(target_domain)
 				if not result:
 					print(err)
-					return []
+					return False, []
 
 		result, err = update_last_scan(crawl_data[0]["domain"])
 		if not result:
 			print(err)
-			return []
+			return False, []
 
-		return alarm_data
+		return True, alarm_data
 
 	def search_data(self, target_domain, crawl_data):
 		for data in crawl_data:
@@ -271,13 +284,3 @@ class LockBit(LeakCrawler):
 		date_obj = datetime.strptime(date_string, date_format)
 		date = date_obj.strftime("%Y-%m-%d %H:%M:%S")
 		return date
-
-
-if __name__ == "__main__":
-	crawler = Crawler()
-	alarm_data = crawler.start()
-
-	print("\n\nalarm data:", len(alarm_data))
-	for d in alarm_data:
-		print(d)
-		print()

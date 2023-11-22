@@ -16,10 +16,9 @@ def check_initialization():
 	return True, rows
 
 def insert_pending(data):
-	params = (data["domain"], data["url"], data["remain_time"], data["deadline"], data["description"], data["uploaded_date"], data["updated_date"])
-
 	try:
 		query = "INSERT INTO pending(domain, url, remain_time, deadline, description, uploaded_date, updated_date) VALUES (%s, %s, %s, %s, %s, %s, %s);"
+		params = (data["domain"], data["url"], data["remain_time"], data["deadline"], data["description"], data["uploaded_date"], data["updated_date"])
 		result, err = db.insert(query, params)
 		if not result:
 			raise Exception(err)
@@ -53,7 +52,8 @@ def select_all_pending():
 def delete_post(domain) -> bool:
 	try:
 		query = "DELETE FROM pending WHERE domain=%s"
-		result, err = db.delete(query, (domain))
+		params = (domain)
+		result, err = db.delete(query, params)
 		if not result:
 			raise Exception(err)
 	except Exception as e:

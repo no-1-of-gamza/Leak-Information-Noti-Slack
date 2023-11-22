@@ -1,9 +1,8 @@
 import sys
 
-sys.path.append("..\\database")
-import database
+from database.database import DB
 
-db = database.DB()
+db = DB()
 
 
 def check_initialization():

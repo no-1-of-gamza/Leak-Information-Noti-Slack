@@ -49,23 +49,22 @@ if __name__ == "__main__":
     while True:
         alarm_data = Main.crawler_start()
 
-        if alarm_data:
-            alarm_data = alarm_data[0]
+        if alarm_data and alarm_data[0]:  # Check if alarm_data is not False and not (0, '')
+            for data in alarm_data[1]:  # Iterate over alarm_data[1] which is a list of alarm data
+                current_time = datetime.datetime.now()
+                elapsed_time = current_time - Main.start_time
 
-            current_time = datetime.datetime.now()
-            elapsed_time = current_time - Main.start_time
+                slack_message = f"Domain: {data['domain']}\n" \
+                                f"URL: {data['url']}\n" \
+                                f"Status: {data['status']}\n" \
+                                f"Deadline: {data['deadline']}\n" \
+                                f"Description: {data['description']}\n" \
+                                f"Uploaded Date: {data['uploaded_date']}\n" \
+                                f"Updated Date: {data['updated_date']}\n" \
+                                f"Start Time: {Main.start_time}\n" \
+                                f"Elapsed Time: {elapsed_time}"
 
-            slack_message = f"Domain: {alarm_data['domain']}\n" \
-                            f"URL: {alarm_data['url']}\n" \
-                            f"Status: {alarm_data['status']}\n" \
-                            f"Deadline: {alarm_data['deadline']}\n" \
-                            f"Description: {alarm_data['description']}\n" \
-                            f"Uploaded Date: {alarm_data['uploaded_date']}\n" \
-                            f"Updated Date: {alarm_data['updated_date']}\n" \
-                            f"Start Time: {Main.start_time}\n" \
-                            f"Elapsed Time: {elapsed_time}"
-
-            Main.send_message(slack_message)
+                Main.send_message(slack_message)
         else:
             current_time = datetime.datetime.now()
             elapsed_time = current_time - Main.start_time

@@ -49,7 +49,7 @@ def select_all_pending():
 		return False, e
 	return True, rows
 
-def delete_post(domain) -> bool:
+def delete_post(domain):
 	try:
 		query = "DELETE FROM pending WHERE domain=%s"
 		params = (domain)

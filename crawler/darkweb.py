@@ -71,7 +71,8 @@ class Crawler:
 
 		crawl_data = self.lockbit.crawl_posts()
 		i = 0
-		while True:
+		crawl_length = len(crawl_data)
+		while i < crawl_length:
 			data = crawl_data[i]
 			if data["domain"] == last_domain:
 				break
@@ -83,7 +84,7 @@ class Crawler:
 			if not result:
 				print(err)
 				return False, []
-			
+
 			i += 1
 
 		result, rows = select_all_pending()
@@ -203,7 +204,7 @@ class LockBit(LeakCrawler):
 		return hosts[idx]
 
 	def bypassProtection(self):
-		WebDriverWait(self.driver, 20).until(
+		WebDriverWait(self.driver, 60).until(
 			EC.presence_of_element_located((By.CLASS_NAME, 'post-big-list'))
 		)
 
@@ -239,6 +240,15 @@ class LockBit(LeakCrawler):
 			if remain_time == "":
 				status = "published"
 
+			# part check
+			try:
+				short_description = item.select_one("div.post-block-text").text
+				if short_description != "":
+					startwith = short_description.strip()[:6]
+					if startwith[:4] == "part":
+						domain += "_part"+startwith[-1]
+			except AttributeError: pass
+
 			data.append({
 				"domain": domain,
 				"url": url,
@@ -260,7 +270,7 @@ class LockBit(LeakCrawler):
 	def crawl_details(self, post_data):
 		self.driver.get(url=post_data["url"])
 
-		WebDriverWait(self.driver, 40).until(
+		WebDriverWait(self.driver, 60).until(
 			EC.presence_of_element_located((By.CLASS_NAME, 'post-company-info'))
 		)
 		soup = BeautifulSoup(self.driver.page_source, "html.parser")
@@ -301,19 +311,3 @@ class LockBit(LeakCrawler):
 		date_obj = datetime.strptime(date_string, date_format)
 		date = date_obj.strftime("%Y-%m-%d %H:%M:%S")
 		return date
-
-import time
-if __name__ == "__main__":
-	start_time = time.time()
-
-	crawler = Crawler()
-	result, alarm_data = crawler.start()
-
-	if result:
-		print("\n\nalarm data:", len(alarm_data))
-		for d in alarm_data:
-			print(d)
-			print()
-
-	end_time = time.time()
-	print("\ntime:", (end_time - start_time))

@@ -22,7 +22,6 @@ class Crawler:
 		result, rows = check_initialization()
 		if not result:
 			print(result)
-			print(rows)
 			return False, []
 
 		if len(rows) < 1:

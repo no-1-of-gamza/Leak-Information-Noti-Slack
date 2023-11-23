@@ -39,18 +39,29 @@ __                          __              __              __
     def send_message(self, message):
         self.messenger.send_message(message)
 
+    def crawler_start(self):
+        alarm_data = self.crawler.start()
+        return alarm_data
+    
+    def crawler_close(self):
+        self.crawler.close()
+        return 
+
 if __name__ == "__main__":
     Main = Main()
     Main.print_welcome()
     print("---------------------------------------------------------")
+    print("---------------------------------------------------------")
     print(f"Program started at: {Main.start_time}")
     print("---------------------------------------------------------")
+
+    crawl_interval = 1 * 60  # 1 minute
 
     while True:
         alarm_data = Main.crawler_start()
 
-        if alarm_data and alarm_data[0]:  # Check if alarm_data is not False and not (0, '')
-            for data in alarm_data[1]:  # Iterate over alarm_data[1] which is a list of alarm data
+        if alarm_data and alarm_data[0]:
+            for data in alarm_data[1]:
                 current_time = datetime.datetime.now()
                 elapsed_time = current_time - Main.start_time
 
@@ -60,14 +71,11 @@ if __name__ == "__main__":
                                 f"Deadline: {data['deadline']}\n" \
                                 f"Description: {data['description']}\n" \
                                 f"Uploaded Date: {data['uploaded_date']}\n" \
-                                f"Updated Date: {data['updated_date']}\n" \
                                 f"Start Time: {Main.start_time}\n" \
                                 f"Elapsed Time: {elapsed_time}"
 
                 Main.send_message(slack_message)
-        else:
-            current_time = datetime.datetime.now()
-            elapsed_time = current_time - Main.start_time
-            print(f"No alarm data found at: {current_time}, Elapsed Time: {elapsed_time}")
+                print(slack_message)
+            print("---------------------------------------------------------")
 
-        time.sleep(10)
+        time.sleep(crawl_interval)

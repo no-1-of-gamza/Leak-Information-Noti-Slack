@@ -8,26 +8,29 @@ import abc
 import random
 from datetime import datetime, timezone
 
-from darkweb_query import *
+from darkweb_db import *
 
 
 class Crawler:
 	def __init__(self):
+		self.db = DB()
+
+	def start(self) -> (bool, list):
 		self.driver = Driver()
 		self.lockbit = LockBit(self.driver.get())
 
-	def start(self) -> (bool, list):
 		alarm_data = []
 
-		result, rows = check_initialization()
+		result, rows = check_initialization(self.db)
 		if not result:
-			print(result)
 			print(rows)
+			self.driver_close()
 			return False, []
 
 		if len(rows) < 1:
 			result, data = self.initial_launch()
 			if not result:
+				self.driver_close()
 				return False, []
 			else:
 				alarm_data = data
@@ -35,11 +38,12 @@ class Crawler:
 			last_domain = rows[0][0]
 			result, data = self.regular_launch(last_domain)
 			if not result:
+				self.driver_close()
 				return False, []
 			else:
 				alarm_data = data
 
-		self.close()
+		self.driver_close()
 		return True, alarm_data
 
 	def initial_launch(self):
@@ -54,14 +58,16 @@ class Crawler:
 			alarm_data.append(data)
 
 		for data in alarm_data:
-			result, err = insert_pending(data)
+			result, err = insert_pending(self.db, data)
 			if not result:
 				print(err)
+				self.driver_close()
 				return False, []
 
-		result, err = update_last_scan(crawl_data[0]["domain"])
+		result, err = update_last_scan(self.db, crawl_data[0]["domain"])
 		if not result:
 			print(err)
+			self.driver_close()
 			return False, []
 
 		return True, alarm_data
@@ -77,19 +83,24 @@ class Crawler:
 			if data["domain"] == last_domain:
 				break
 
+			if data["status"] == "published":
+				continue
+
 			self.lockbit.crawl_details(data)
 			alarm_data.append(data)
 
-			result, err = insert_pending(data)
+			result, err = insert_pending(self.db, data)
 			if not result:
 				print(err)
+				self.driver_close()
 				return False, []
 
 			i += 1
 
-		result, rows = select_all_pending()
+		result, rows = select_all_pending(self.db)
 		if not result:
-			print(err)
+			print(rows)
+			self.driver_close()
 			return False, []
 
 		for pending_data in rows:
@@ -99,22 +110,25 @@ class Crawler:
 				data = self.create_negotiated_data(pending_data)
 				alarm_data.append(data)
 
-				result, err = delete_post(target_domain)
+				result, err = delete_post(self.db, target_domain)
 				if not result:
 					print(err)
+					self.driver_close()
 					return False, []
 			elif crawled_data["status"] == "published":
 				self.lockbit.crawl_details(crawled_data)
 				alarm_data.append(crawled_data)
 
-				result, err = delete_post(target_domain)
+				result, err = delete_post(self.db, target_domain)
 				if not result:
 					print(err)
+					self.driver_close()
 					return False, []
 
-		result, err = update_last_scan(crawl_data[0]["domain"])
+		result, err = update_last_scan(self.db, crawl_data[0]["domain"])
 		if not result:
 			print(err)
+			self.driver_close()
 			return False, []
 
 		return True, alarm_data
@@ -138,9 +152,14 @@ class Crawler:
 		}
 		return data
 
-	def close(self):
+	def driver_close(self):
 		self.driver.close()
-		db_close()
+
+	def close(self):
+		result, err = db_close(self.db)
+		if not result:
+			print(err)
+			return False, []
 
 
 class Driver:

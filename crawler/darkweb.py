@@ -2,6 +2,7 @@ from selenium import webdriver
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
+from selenium.common.exceptions import TimeoutException
 from bs4 import BeautifulSoup
 
 import abc
@@ -50,24 +51,29 @@ class Crawler:
 		alarm_data = []
 
 		crawl_data = self.lockbit.crawl_posts()
+		if crawl_data[0]["status"] == "timeout":
+			print("Timeout to load main page")
+			return False, []
+
 		for data in crawl_data:
 			if data["status"] == "published":
 				continue
 
-			self.lockbit.crawl_details(data)
+			result = self.lockbit.crawl_details(data)
+			if not result:
+				print("Timeout to load detail page")
+				return False, []
 			alarm_data.append(data)
 
 		for data in alarm_data:
 			result, err = insert_pending(self.db, data)
 			if not result:
 				print(err)
-				self.driver_close()
 				return False, []
 
 		result, err = update_last_scan(self.db, crawl_data[0]["domain"])
 		if not result:
 			print(err)
-			self.driver_close()
 			return False, []
 
 		return True, alarm_data
@@ -76,60 +82,68 @@ class Crawler:
 		alarm_data = []
 
 		crawl_data = self.lockbit.crawl_posts()
+		if crawl_data[0]["status"] == "timeout":
+			print("Timeout to load main page")
+			return False, []
+
 		i = 0
+		new_data = []
 		crawl_length = len(crawl_data)
 		while i < crawl_length:
 			data = crawl_data[i]
 			if data["domain"] == last_domain:
 				break
-
 			if data["status"] == "published":
 				continue
 
-			self.lockbit.crawl_details(data)
-			alarm_data.append(data)
-
-			result, err = insert_pending(self.db, data)
+			result = self.lockbit.crawl_details(data)
 			if not result:
-				print(err)
-				self.driver_close()
+				print("Timeout to load detail page")
 				return False, []
+			new_data.append(data)
 
 			i += 1
 
 		result, rows = select_all_pending(self.db)
 		if not result:
 			print(rows)
-			self.driver_close()
 			return False, []
 
+		delete_domain = []
 		for pending_data in rows:
 			target_domain = pending_data[0]
 			crawled_data = self.search_data(target_domain, crawl_data)
 			if crawled_data == {}:
 				data = self.create_negotiated_data(pending_data)
 				alarm_data.append(data)
+				delete_domain.append(target_domain)
 
-				result, err = delete_post(self.db, target_domain)
-				if not result:
-					print(err)
-					self.driver_close()
-					return False, []
 			elif crawled_data["status"] == "published":
-				self.lockbit.crawl_details(crawled_data)
-				alarm_data.append(crawled_data)
-
-				result, err = delete_post(self.db, target_domain)
+				result = self.lockbit.crawl_details(crawled_data)
 				if not result:
-					print(err)
-					self.driver_close()
+					print("Timeout to load detail page")
 					return False, []
+				alarm_data.append(crawled_data)
+				delete_domain.append(target_domain)
+
+		for data in new_data:
+			result, err = insert_pending(self.db, data)
+			if not result:
+				print(err)
+				return False, []
+
+		for domain in delete_domain:
+			result, err = delete_post(self.db, domain)
+			if not result:
+				print(err)
+				return False, []
 
 		result, err = update_last_scan(self.db, crawl_data[0]["domain"])
 		if not result:
 			print(err)
-			self.driver_close()
 			return False, []
+
+		alarm_data = new_data + alarm_data
 
 		return True, alarm_data
 
@@ -189,8 +203,11 @@ class LeakCrawler(abc.ABC):
 		self.site = ""
 
 	def get_source(self):
-		self.driver.get(url=self.site)
-		self.bypassProtection()
+		try:
+			self.driver.get(url=self.site)
+			self.bypassProtection()
+		except TimeoutException:
+			return ""
 
 		source = self.driver.page_source
 		return source
@@ -229,6 +246,8 @@ class LockBit(LeakCrawler):
 
 	def crawl_posts(self):
 		source = self.get_source()
+		if source == "":
+			return [{"status": "timeout"}]
 		soup = BeautifulSoup(source, "html.parser")
 
 		data = []
@@ -287,11 +306,15 @@ class LockBit(LeakCrawler):
 		return url
 
 	def crawl_details(self, post_data):
-		self.driver.get(url=post_data["url"])
+		try:
+			self.driver.get(url=post_data["url"])
 
-		WebDriverWait(self.driver, 60).until(
-			EC.presence_of_element_located((By.CLASS_NAME, 'post-company-info'))
-		)
+			WebDriverWait(self.driver, 60).until(
+				EC.presence_of_element_located((By.CLASS_NAME, 'post-company-info'))
+			)
+		except TimeoutException:
+			return False
+
 		soup = BeautifulSoup(self.driver.page_source, "html.parser")
 
 		deadline = soup.select_one("div.post-wrapper>p.post-banner-p").text
@@ -314,6 +337,8 @@ class LockBit(LeakCrawler):
 		post_data["description"] = description
 		post_data["uploaded_date"] = uploaded_date
 		post_data["updated_date"] = updated_date
+
+		return True
 
 	def deadline_parser(self, string):
 		deadline_string = string[10:-4].strip()

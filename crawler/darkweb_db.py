@@ -1,10 +1,11 @@
 import pymysql as mysql
+import os
 
 
 class DB:
 	def __init__(self):
 		db_info = []
-		with open("database\\database.txt", "r") as db:
+		with open(os.getcwd()+"\\database\\database.txt", "r") as db:
 			for _ in range(4):
 				db_info.append(db.readline().strip())
 

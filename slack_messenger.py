@@ -5,7 +5,7 @@ import time
 
 class SlackMessenger:
     def __init__(self):
-        self.webhook_url = "https://hooks.slack.com/services/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"
+        self.webhook_url = "https://hooks.slack.com/services/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"
 
     def _get_current_time(self):
         return time.strftime("%Y-%m-%d %H:%M:%S", time.localtime())
